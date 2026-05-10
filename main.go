@@ -1,7 +1,7 @@
 package main
 
-import "fmt"
+import "github.com/AliMousaviSoft/subjackal/cmd"
 
 func main() {
-    fmt.Println("subjackal")
+    cmd.Execute()
 }
