@@ -60,15 +60,17 @@ func run(cmd *cobra.Command, args []string) {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	// pick enumerator: --subs file takes priority over crt.sh
+	// pick enumerator
 	var enumerator enum.Enumerator
 	if subs != "" {
 		enumerator = enum.NewFileEnum(subs)
 	} else {
-		enumerator = enum.NewCrtSh()
+		crtsh := enum.NewCrtSh()
+		crtsh.Debug = debug
+		enumerator = crtsh
 	}
 
-	// debug mode: test enumeration only
+	// debug: test enumeration only, skip pipeline
 	if debug {
 		domainLabel := "from file"
 		if len(domains) > 0 {
@@ -115,42 +117,45 @@ func run(cmd *cobra.Command, args []string) {
 	}
 
 	counts := map[model.Status]int{}
+	total := 0
 
-	// if --subs given, use a dummy domain label (not used for filtering)
-	runDomains := domains
-	if subs != "" && len(runDomains) == 0 {
-		runDomains = []string{""}
-	}
-
-	for _, domain := range runDomains {
-		if !silent {
-			if subs != "" {
-				fmt.Printf("\n[*] Mode: file-based (%s)\n\n", subs)
-			} else {
-				fmt.Printf("\n[*] Target: %s\n\n", domain)
-			}
-		}
-
-		results := pipe.Run(ctx, domain)
+	processResults := func(results <-chan *model.Subdomain) {
 		for sub := range results {
+			total++
 			counts[sub.Status]++
-
 			if jw != nil {
 				jw.Write(sub)
 			}
-
 			if !silent {
+				fmt.Fprintf(os.Stderr, "\r[*] Processed: %d  ", total)
 				output.PrintResult(sub, silent)
 			}
 		}
 	}
 
+	if subs != "" {
+		// file mode — domain label irrelevant, pass empty string
+		if !silent {
+			fmt.Printf("\n[*] Mode: file-based (%s)\n\n", subs)
+		}
+		processResults(pipe.Run(ctx, ""))
+	} else {
+		for _, domain := range domains {
+			if !silent {
+				fmt.Printf("\n[*] Target: %s\n\n", domain)
+			}
+			processResults(pipe.Run(ctx, domain))
+		}
+	}
+
 	if !silent {
+		fmt.Fprintf(os.Stderr, "\r                         \r") // clear progress line
 		fmt.Printf("\n%s--- Summary ---%s\n", "\033[1m", "\033[0m")
 		fmt.Printf("  Vulnerable  : %d\n", counts[model.StatusVulnerable])
 		fmt.Printf("  Suspicious  : %d\n", counts[model.StatusSuspicious])
 		fmt.Printf("  NXDOMAIN    : %d\n", counts[model.StatusNXDOMAIN])
 		fmt.Printf("  Alive       : %d\n", counts[model.StatusAlive])
+		fmt.Printf("  Total       : %d\n", total)
 	}
 }
 

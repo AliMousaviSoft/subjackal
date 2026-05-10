@@ -31,13 +31,22 @@ func (p *Pipeline) Run(ctx context.Context, domain string) <-chan *model.Subdoma
 	results := make(chan *model.Subdomain, 100)
 	go func() {
 		defer close(results)
+
 		subdomains, err := p.cfg.Enumerator.Enumerate(ctx, domain)
 		if err != nil {
 			return
 		}
-		isWildcard, wildcardIP := p.cfg.Resolver.DetectWildcard(ctx, domain)
+
+		// skip wildcard detection in file mode (no root domain)
+		var isWildcard bool
+		var wildcardIP string
+		if domain != "" {
+			isWildcard, wildcardIP = p.cfg.Resolver.DetectWildcard(ctx, domain)
+		}
+
 		var wg sync.WaitGroup
 		sem := make(chan struct{}, p.cfg.Threads)
+
 		for sub := range subdomains {
 			sub := sub
 			select {

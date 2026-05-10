@@ -13,6 +13,7 @@ const crtshURL = "https://crt.sh/?q=%%25.%s&output=json"
 
 type CrtSh struct {
 	client *http.Client
+	Debug  bool
 }
 
 func NewCrtSh() *CrtSh {
@@ -50,7 +51,9 @@ func (c *CrtSh) Enumerate(ctx context.Context, domain string) (<-chan string, er
 			}
 
 			wait := time.Duration(1<<uint(attempt+1)) * time.Second
-			fmt.Printf("[crt.sh] status %d, retrying in %s...\n", status, wait)
+			if c.Debug {
+				fmt.Printf("[crt.sh] status %d, retrying in %s...\n", status, wait)
+			}
 			select {
 			case <-ctx.Done():
 				return
@@ -59,7 +62,9 @@ func (c *CrtSh) Enumerate(ctx context.Context, domain string) (<-chan string, er
 		}
 
 		if err != nil || resp == nil || resp.StatusCode != 200 {
-			fmt.Printf("[crt.sh] failed after retries\n")
+			if c.Debug {
+				fmt.Printf("[crt.sh] failed after retries\n")
+			}
 			return
 		}
 		defer resp.Body.Close()
@@ -68,7 +73,9 @@ func (c *CrtSh) Enumerate(ctx context.Context, domain string) (<-chan string, er
 			NameValue string `json:"name_value"`
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
-			fmt.Printf("[crt.sh] decode error: %v\n", err)
+			if c.Debug {
+				fmt.Printf("[crt.sh] decode error: %v\n", err)
+			}
 			return
 		}
 
