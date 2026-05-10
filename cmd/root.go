@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"os"
@@ -8,9 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
-	"bufio"
 
-	"github.com/spf13/cobra"
 	"github.com/AliMousaviSoft/subjackal/internal/analyze"
 	"github.com/AliMousaviSoft/subjackal/internal/enum"
 	"github.com/AliMousaviSoft/subjackal/internal/model"
@@ -18,17 +17,21 @@ import (
 	"github.com/AliMousaviSoft/subjackal/internal/pipeline"
 	"github.com/AliMousaviSoft/subjackal/internal/probe"
 	"github.com/AliMousaviSoft/subjackal/internal/resolve"
+	"github.com/spf13/cobra"
 )
 
 var (
 	update     bool
 	target     string
 	targets    string
+	subs       string
 	threads    int
 	timeoutMs  int
 	jsonOutput bool
 	outputFile string
 	resolvers  []string
+	silent     bool
+	debug      bool
 )
 
 var rootCmd = &cobra.Command{
@@ -44,35 +47,62 @@ func run(cmd *cobra.Command, args []string) {
 	}
 
 	domains := collectDomains()
-	if len(domains) == 0 {
-		fmt.Fprintln(os.Stderr, "Error: provide -target <domain> or -targets <file>")
+	if len(domains) == 0 && subs == "" {
+		fmt.Fprintln(os.Stderr, "Error: provide --target, --targets, or --subs")
 		cmd.Help()
 		os.Exit(1)
 	}
 
-	output.PrintBanner()
+	if !silent {
+		output.PrintBanner()
+	}
 
-	// context with SIGINT/SIGTERM cancellation
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	// build components
+	// pick enumerator: --subs file takes priority over crt.sh
+	var enumerator enum.Enumerator
+	if subs != "" {
+		enumerator = enum.NewFileEnum(subs)
+	} else {
+		enumerator = enum.NewCrtSh()
+	}
+
+	// debug mode: test enumeration only
+	if debug {
+		domainLabel := "from file"
+		if len(domains) > 0 {
+			domainLabel = domains[0]
+		}
+		fmt.Printf("[debug] testing enumeration for: %s\n", domainLabel)
+		subsCh, err := enumerator.Enumerate(ctx, domainLabel)
+		if err != nil {
+			fmt.Printf("[debug] enumerate error: %v\n", err)
+			return
+		}
+		count := 0
+		for s := range subsCh {
+			fmt.Println("[debug] subdomain:", s)
+			count++
+		}
+		fmt.Printf("[debug] total: %d subdomains\n", count)
+		return
+	}
+
 	resolver := resolve.New(resolvers, time.Duration(timeoutMs)*time.Millisecond, 3)
 	analyzer := analyze.New(resolver)
 	prober   := probe.New(5 * time.Second)
-	crtsh    := enum.NewCrtSh()
 
 	cfg := pipeline.Config{
 		Threads:    threads,
 		Resolver:   resolver,
 		Analyzer:   analyzer,
 		Prober:     prober,
-		Enumerator: crtsh,
+		Enumerator: enumerator,
 	}
 
 	pipe := pipeline.New(cfg)
 
-	// JSON writer (optional)
 	var jw *output.JSONWriter
 	if outputFile != "" {
 		var err error
@@ -84,29 +114,44 @@ func run(cmd *cobra.Command, args []string) {
 		defer jw.Close()
 	}
 
-	// counters for summary
 	counts := map[model.Status]int{}
 
-	for _, domain := range domains {
-		fmt.Printf("\n[*] Target: %s\n\n", domain)
+	// if --subs given, use a dummy domain label (not used for filtering)
+	runDomains := domains
+	if subs != "" && len(runDomains) == 0 {
+		runDomains = []string{""}
+	}
+
+	for _, domain := range runDomains {
+		if !silent {
+			if subs != "" {
+				fmt.Printf("\n[*] Mode: file-based (%s)\n\n", subs)
+			} else {
+				fmt.Printf("\n[*] Target: %s\n\n", domain)
+			}
+		}
 
 		results := pipe.Run(ctx, domain)
 		for sub := range results {
-			output.PrintResult(sub)
 			counts[sub.Status]++
 
 			if jw != nil {
 				jw.Write(sub)
 			}
+
+			if !silent {
+				output.PrintResult(sub, silent)
+			}
 		}
 	}
 
-	// summary
-	fmt.Printf("\n%s--- Summary ---%s\n", "\033[1m", "\033[0m")
-	fmt.Printf("  Vulnerable  : %d\n", counts[model.StatusVulnerable])
-	fmt.Printf("  Suspicious  : %d\n", counts[model.StatusSuspicious])
-	fmt.Printf("  NXDOMAIN    : %d\n", counts[model.StatusNXDOMAIN])
-	fmt.Printf("  Alive       : %d\n", counts[model.StatusAlive])
+	if !silent {
+		fmt.Printf("\n%s--- Summary ---%s\n", "\033[1m", "\033[0m")
+		fmt.Printf("  Vulnerable  : %d\n", counts[model.StatusVulnerable])
+		fmt.Printf("  Suspicious  : %d\n", counts[model.StatusSuspicious])
+		fmt.Printf("  NXDOMAIN    : %d\n", counts[model.StatusNXDOMAIN])
+		fmt.Printf("  Alive       : %d\n", counts[model.StatusAlive])
+	}
 }
 
 func doUpdate() {
@@ -159,12 +204,15 @@ func Execute() {
 }
 
 func init() {
-	rootCmd.Flags().BoolVarP(&update, "up", "", false, "Update to latest version")
-	rootCmd.Flags().StringVarP(&target, "target", "", "", "Single target domain")
-	rootCmd.Flags().StringVarP(&targets, "targets", "", "", "File with list of domains")
-	rootCmd.Flags().IntVarP(&threads, "threads", "", 50, "Concurrency (default 50)")
-	rootCmd.Flags().IntVarP(&timeoutMs, "timeout", "", 3000, "DNS timeout in ms (default 3000)")
-	rootCmd.Flags().BoolVarP(&jsonOutput, "json", "", false, "JSON output to stdout")
+	rootCmd.Flags().BoolVar(&update, "up", false, "Update to latest version")
+	rootCmd.Flags().StringVar(&target, "target", "", "Single target domain")
+	rootCmd.Flags().StringVar(&targets, "targets", "", "File with list of domains")
+	rootCmd.Flags().StringVar(&subs, "subs", "", "File with pre-enumerated subdomains (skips crt.sh)")
+	rootCmd.Flags().IntVar(&threads, "threads", 50, "Concurrency (default 50)")
+	rootCmd.Flags().IntVar(&timeoutMs, "timeout", 3000, "DNS timeout in ms (default 3000)")
+	rootCmd.Flags().BoolVar(&jsonOutput, "json", false, "JSON output to stdout")
 	rootCmd.Flags().StringVarP(&outputFile, "output", "o", "", "Write JSON results to file")
 	rootCmd.Flags().StringSliceVarP(&resolvers, "resolvers", "r", []string{}, "Custom resolvers (e.g. 1.1.1.1:53,8.8.8.8:53)")
+	rootCmd.Flags().BoolVar(&silent, "silent", false, "Suppress terminal output, only write to -o file")
+	rootCmd.Flags().BoolVar(&debug, "debug", false, "Debug mode: test enumeration only")
 }
