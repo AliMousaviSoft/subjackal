@@ -2,6 +2,7 @@ package output
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/AliMousaviSoft/subjackal/internal/model"
 )
@@ -15,12 +16,25 @@ const (
 	colorBold   = "\033[1m"
 )
 
+var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
+func PrintProgress(total int, frame int) {
+	spinner := spinnerFrames[frame%len(spinnerFrames)]
+	fmt.Fprintf(os.Stderr, "\r%s %s Processing... (%d resolved)%s",
+		colorCyan, spinner, total, colorReset,
+	)
+}
+
+func ClearProgress() {
+	fmt.Fprintf(os.Stderr, "\r\033[2K") // clear entire line
+}
+
 func PrintResult(sub *model.Subdomain, silent bool) {
 	switch sub.Status {
 	case model.StatusVulnerable:
 		fmt.Printf("%s%s[VULNERABLE]%s %s\n", colorBold, colorRed, colorReset, sub.Domain)
 		fmt.Printf("             service    : %s\n", sub.ServiceProvider)
-		fmt.Printf("             confidence : %s\n", sub.Confidence)
+		fmt.Printf("             confidence : %s\n", string(sub.Confidence))
 		fmt.Printf("             note       : %s\n", sub.Note)
 
 	case model.StatusSuspicious:
@@ -28,9 +42,9 @@ func PrintResult(sub *model.Subdomain, silent bool) {
 		if service == "" {
 			service = "unknown"
 		}
-		fmt.Printf("%s[SUSPICIOUS]%s %s — %s (%s confidence)\n",
+		fmt.Printf("%s[SUSPICIOUS]%s %s — CNAME → %s (%s confidence)\n",
 			colorYellow, colorReset,
-			sub.Domain, service, sub.Confidence,
+			sub.Domain, service, string(sub.Confidence),
 		)
 
 	case model.StatusNXDOMAIN:

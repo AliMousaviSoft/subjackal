@@ -60,7 +60,6 @@ func run(cmd *cobra.Command, args []string) {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	// pick enumerator
 	var enumerator enum.Enumerator
 	if subs != "" {
 		enumerator = enum.NewFileEnum(subs)
@@ -70,7 +69,6 @@ func run(cmd *cobra.Command, args []string) {
 		enumerator = crtsh
 	}
 
-	// debug: test enumeration only, skip pipeline
 	if debug {
 		domainLabel := "from file"
 		if len(domains) > 0 {
@@ -118,23 +116,40 @@ func run(cmd *cobra.Command, args []string) {
 
 	counts := map[model.Status]int{}
 	total := 0
+	frame := 0
+
+	// spinner ticker — updates every 80ms on stderr
+	ticker := time.NewTicker(80 * time.Millisecond)
+	defer ticker.Stop()
 
 	processResults := func(results <-chan *model.Subdomain) {
-		for sub := range results {
-			total++
-			counts[sub.Status]++
-			if jw != nil {
-				jw.Write(sub)
-			}
-			if !silent {
-				fmt.Fprintf(os.Stderr, "\r[*] Processed: %d  ", total)
-				output.PrintResult(sub, silent)
+		for {
+			select {
+			case sub, ok := <-results:
+				if !ok {
+					return
+				}
+				total++
+				counts[sub.Status]++
+				if jw != nil {
+					jw.Write(sub)
+				}
+				if !silent {
+					output.ClearProgress()
+					output.PrintResult(sub, silent)
+				}
+			case <-ticker.C:
+				if !silent {
+					output.PrintProgress(total, frame)
+					frame++
+				}
+			case <-ctx.Done():
+				return
 			}
 		}
 	}
 
 	if subs != "" {
-		// file mode — domain label irrelevant, pass empty string
 		if !silent {
 			fmt.Printf("\n[*] Mode: file-based (%s)\n\n", subs)
 		}
@@ -149,7 +164,7 @@ func run(cmd *cobra.Command, args []string) {
 	}
 
 	if !silent {
-		fmt.Fprintf(os.Stderr, "\r                         \r") // clear progress line
+		output.ClearProgress()
 		fmt.Printf("\n%s--- Summary ---%s\n", "\033[1m", "\033[0m")
 		fmt.Printf("  Vulnerable  : %d\n", counts[model.StatusVulnerable])
 		fmt.Printf("  Suspicious  : %d\n", counts[model.StatusSuspicious])
@@ -173,11 +188,9 @@ func doUpdate() {
 
 func collectDomains() []string {
 	var domains []string
-
 	if target != "" {
 		domains = append(domains, target)
 	}
-
 	if targets != "" {
 		f, err := os.Open(targets)
 		if err != nil {
@@ -192,7 +205,6 @@ func collectDomains() []string {
 			}
 		}
 	}
-
 	seen := make(map[string]bool)
 	unique := domains[:0]
 	for _, d := range domains {
@@ -217,7 +229,7 @@ func init() {
 	rootCmd.Flags().IntVar(&timeoutMs, "timeout", 3000, "DNS timeout in ms (default 3000)")
 	rootCmd.Flags().BoolVar(&jsonOutput, "json", false, "JSON output to stdout")
 	rootCmd.Flags().StringVarP(&outputFile, "output", "o", "", "Write JSON results to file")
-	rootCmd.Flags().StringSliceVarP(&resolvers, "resolvers", "r", []string{}, "Custom resolvers (e.g. 1.1.1.1:53,8.8.8.8:53)")
+	rootCmd.Flags().StringSliceVarP(&resolvers, "resolvers", "r", []string{}, "Custom resolvers")
 	rootCmd.Flags().BoolVar(&silent, "silent", false, "Suppress terminal output, only write to -o file")
 	rootCmd.Flags().BoolVar(&debug, "debug", false, "Debug mode: test enumeration only")
 }
