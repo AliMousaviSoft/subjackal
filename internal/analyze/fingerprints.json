@@ -1,0 +1,121 @@
+{
+  "services": [
+    {
+      "name": "GitHub Pages",
+      "cname_patterns": [".github.io"],
+      "http_fingerprint": "there isn't a github pages site here",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/37"
+    },
+    {
+      "name": "Heroku",
+      "cname_patterns": [".herokuapp.com", ".herokussl.com"],
+      "http_fingerprint": "no such app",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/46"
+    },
+    {
+      "name": "AWS S3",
+      "cname_patterns": [".s3.amazonaws.com", ".s3-website"],
+      "http_fingerprint": "nosuchbucket",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/1"
+    },
+    {
+      "name": "Shopify",
+      "cname_patterns": [".myshopify.com"],
+      "http_fingerprint": "sorry, this shop is currently unavailable",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/32"
+    },
+    {
+      "name": "Fastly",
+      "cname_patterns": [".fastly.net"],
+      "http_fingerprint": "fastly error: unknown domain",
+      "status_codes": [404],
+      "confidence": "medium",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/22"
+    },
+    {
+      "name": "Ghost",
+      "cname_patterns": [".ghost.io"],
+      "http_fingerprint": "the thing you were looking for is no longer here",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/14"
+    },
+    {
+      "name": "Netlify",
+      "cname_patterns": [".netlify.app", ".netlify.com"],
+      "http_fingerprint": "not found - request id",
+      "status_codes": [404],
+      "confidence": "medium",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/67"
+    },
+    {
+      "name": "Vercel",
+      "cname_patterns": [".vercel.app", ".now.sh"],
+      "http_fingerprint": "the deployment you are trying to access does not exist",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/63"
+    },
+    {
+      "name": "Azure",
+      "cname_patterns": [".azurewebsites.net", ".cloudapp.net", ".cloudapp.azure.com"],
+      "http_fingerprint": "404 web site not found",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/35"
+    },
+    {
+      "name": "Zendesk",
+      "cname_patterns": [".zendesk.com"],
+      "http_fingerprint": "help center closed",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/23"
+    },
+    {
+      "name": "Tumblr",
+      "cname_patterns": [".tumblr.com"],
+      "http_fingerprint": "there's nothing here",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/4"
+    },
+    {
+      "name": "Surge.sh",
+      "cname_patterns": [".surge.sh"],
+      "http_fingerprint": "project not found",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/2"
+    },
+    {
+      "name": "Vercel",
+      "cname_patterns": [".vercel.app", ".now.sh"],
+      "http_fingerprint": "the deployment you are trying to access does not exist",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/63"
+    }
+  ]
+}
