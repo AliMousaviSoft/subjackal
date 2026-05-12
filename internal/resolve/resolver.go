@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"net"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/miekg/dns"
@@ -16,6 +17,13 @@ var DefaultResolvers = []string{
 	"8.8.8.8:53",
 	"8.8.4.4:53",
 	"9.9.9.9:53",
+	"129.250.35.251:53",
+	"208.67.222.222:53",
+}
+
+type cacheEntry struct {
+	msg *dns.Msg
+	exp time.Time
 }
 
 type Resolver struct {
@@ -23,18 +31,28 @@ type Resolver struct {
 	timeout time.Duration
 	retries int
 	client  *dns.Client
+	cache   sync.Map // key: "fqdn:qtype" → cacheEntry
 }
 
 func New(servers []string, timeout time.Duration, retries int) *Resolver {
-	if len(servers) == 0 {
-		servers = DefaultResolvers
+	merged := make([]string, 0, len(DefaultResolvers)+len(servers))
+	merged = append(merged, DefaultResolvers...)
+	for _, s := range servers {
+		if !strings.Contains(s, ":") {
+			s = s + ":53"
+		}
+		merged = append(merged, s)
 	}
 	return &Resolver{
-		servers: servers,
+		servers: merged,
 		timeout: timeout,
 		retries: retries,
 		client:  &dns.Client{Timeout: timeout, Net: "udp"},
 	}
+}
+
+func (r *Resolver) cacheKey(fqdn string, qtype uint16) string {
+	return fmt.Sprintf("%s:%d", fqdn, qtype)
 }
 
 func (r *Resolver) pickServer() string {
@@ -42,21 +60,42 @@ func (r *Resolver) pickServer() string {
 }
 
 func (r *Resolver) query(ctx context.Context, fqdn string, qtype uint16) (*dns.Msg, error) {
+	key := r.cacheKey(fqdn, qtype)
+
+	// check cache
+	if v, ok := r.cache.Load(key); ok {
+		entry := v.(cacheEntry)
+		if time.Now().Before(entry.exp) {
+			return entry.msg, nil
+		}
+		r.cache.Delete(key)
+	}
+
 	m := new(dns.Msg)
 	m.SetQuestion(dns.Fqdn(fqdn), qtype)
 	m.RecursionDesired = true
+
 	var (
 		resp *dns.Msg
 		err  error
 	)
+
+	// try all resolvers, not just random pick — for cache accuracy
+	servers := make([]string, len(r.servers))
+	copy(servers, r.servers)
+	rand.Shuffle(len(servers), func(i, j int) { servers[i], servers[j] = servers[j], servers[i] })
+
 	for i := 0; i < r.retries; i++ {
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		default:
 		}
-		resp, _, err = r.client.Exchange(m, r.pickServer())
+		server := servers[i%len(servers)]
+		resp, _, err = r.client.Exchange(m, server)
 		if err == nil {
+			// cache for 60 seconds
+			r.cache.Store(key, cacheEntry{msg: resp, exp: time.Now().Add(60 * time.Second)})
 			return resp, nil
 		}
 	}
@@ -77,6 +116,20 @@ func (r *Resolver) LookupA(ctx context.Context, host string) ([]string, error) {
 	return ips, nil
 }
 
+func (r *Resolver) LookupAAAA(ctx context.Context, host string) ([]string, error) {
+	resp, err := r.query(ctx, host, dns.TypeAAAA)
+	if err != nil {
+		return nil, err
+	}
+	var ips []string
+	for _, rr := range resp.Answer {
+		if aaaa, ok := rr.(*dns.AAAA); ok {
+			ips = append(ips, aaaa.AAAA.String())
+		}
+	}
+	return ips, nil
+}
+
 func (r *Resolver) LookupNS(ctx context.Context, host string) ([]string, error) {
 	resp, err := r.query(ctx, host, dns.TypeNS)
 	if err != nil {
@@ -91,12 +144,46 @@ func (r *Resolver) LookupNS(ctx context.Context, host string) ([]string, error) 
 	return ns, nil
 }
 
-func (r *Resolver) IsNXDOMAIN(ctx context.Context, host string) (bool, error) {
-	resp, err := r.query(ctx, host, dns.TypeA)
+func (r *Resolver) LookupMX(ctx context.Context, host string) ([]string, error) {
+	resp, err := r.query(ctx, host, dns.TypeMX)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
-	return resp.Rcode == dns.RcodeNameError, nil
+	var mx []string
+	for _, rr := range resp.Answer {
+		if m, ok := rr.(*dns.MX); ok {
+			mx = append(mx, fmt.Sprintf("%d %s", m.Preference, m.Mx))
+		}
+	}
+	return mx, nil
+}
+
+// IsNXDOMAIN retries across multiple resolvers before confirming NXDOMAIN
+// This prevents false positives from a single resolver being down
+func (r *Resolver) IsNXDOMAIN(ctx context.Context, host string) (bool, error) {
+	nxCount := 0
+	total := min(len(r.servers), 3) // check up to 3 different resolvers
+
+	servers := make([]string, len(r.servers))
+	copy(servers, r.servers)
+	rand.Shuffle(len(servers), func(i, j int) { servers[i], servers[j] = servers[j], servers[i] })
+
+	for i := 0; i < total; i++ {
+		m := new(dns.Msg)
+		m.SetQuestion(dns.Fqdn(host), dns.TypeA)
+		m.RecursionDesired = true
+
+		resp, _, err := r.client.Exchange(m, servers[i])
+		if err != nil {
+			continue
+		}
+		if resp.Rcode == dns.RcodeNameError {
+			nxCount++
+		}
+	}
+
+	// only confirm NXDOMAIN if majority agree
+	return nxCount >= 2, nil
 }
 
 func (r *Resolver) DetectWildcard(ctx context.Context, domain string) (bool, string) {
@@ -158,4 +245,11 @@ func randomHex(n int) string {
 		b[i] = chars[rand.Intn(len(chars))]
 	}
 	return string(b)
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
