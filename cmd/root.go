@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -21,17 +22,29 @@ import (
 )
 
 var (
-	update     bool
-	target     string
-	targets    string
-	subs       string
-	threads    int
-	timeoutMs  int
-	jsonOutput bool
-	outputFile string
-	resolvers  []string
-	silent     bool
-	debug      bool
+	update      bool
+	target      string
+	targets     string
+	subs        string
+	threads     int
+	timeoutMs   int
+	httpTimeout int
+	retries     int
+	jsonOutput  bool
+	outputFile  string
+	resolvers   []string
+	silent      bool
+	debug       bool
+	inspect     bool
+	noHTTP      bool
+	cnameOnly   bool
+	noWildcard  bool
+	onlyStatus  string
+	exclude     []string
+	include     []string
+	matchSvc    []string
+	fpFile      string
+	verify      bool
 )
 
 var rootCmd = &cobra.Command{
@@ -46,22 +59,38 @@ func run(cmd *cobra.Command, args []string) {
 		return
 	}
 
+	// stdin support: cat subs.txt | subjackal
+	stdinMode := false
+	stat, _ := os.Stdin.Stat()
+	if (stat.Mode() & os.ModeCharDevice) == 0 {
+		stdinMode = true
+	}
+
 	domains := collectDomains()
-	if len(domains) == 0 && subs == "" {
-		fmt.Fprintln(os.Stderr, "Error: provide --target, --targets, or --subs")
+	if len(domains) == 0 && subs == "" && !stdinMode {
+		fmt.Fprintln(os.Stderr, "Error: provide --target, --targets, --subs, or pipe via stdin")
 		cmd.Help()
 		os.Exit(1)
 	}
 
 	if !silent {
-		output.PrintBanner()
+		bannerTarget := target
+		if subs != "" {
+			bannerTarget = subs
+		} else if targets != "" {
+			bannerTarget = targets
+		}
+		output.PrintBanner(bannerTarget)
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	// enumerator selection
 	var enumerator enum.Enumerator
-	if subs != "" {
+	if stdinMode {
+		enumerator = enum.NewReaderEnum(os.Stdin)
+	} else if subs != "" {
 		enumerator = enum.NewFileEnum(subs)
 	} else {
 		crtsh := enum.NewCrtSh()
@@ -89,9 +118,21 @@ func run(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	resolver := resolve.New(resolvers, time.Duration(timeoutMs)*time.Millisecond, 3)
+	resolver := resolve.New(resolvers, time.Duration(timeoutMs)*time.Millisecond, retries)
 	analyzer := analyze.New(resolver)
-	prober   := probe.New(5 * time.Second)
+
+	var prober *probe.HTTPProber
+	if !noHTTP {
+		prober = probe.New(time.Duration(httpTimeout) * time.Millisecond)
+	}
+
+	// custom fingerprint file
+	if fpFile != "" {
+		if err := analyze.LoadFingerprintsFromFile(fpFile); err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading fingerprints: %v\n", err)
+			os.Exit(1)
+		}
+	}
 
 	cfg := pipeline.Config{
 		Threads:    threads,
@@ -99,6 +140,11 @@ func run(cmd *cobra.Command, args []string) {
 		Analyzer:   analyzer,
 		Prober:     prober,
 		Enumerator: enumerator,
+		NoWildcard: noWildcard,
+		CNAMEOnly:  cnameOnly,
+		Exclude:    exclude,
+		Include:    include,
+		Verify:     verify,
 	}
 
 	pipe := pipeline.New(cfg)
@@ -118,9 +164,30 @@ func run(cmd *cobra.Command, args []string) {
 	total := 0
 	frame := 0
 
-	// spinner ticker — updates every 80ms on stderr
 	ticker := time.NewTicker(80 * time.Millisecond)
 	defer ticker.Stop()
+
+	// build status filter
+	filterStatus := parseStatusFilter(onlyStatus)
+	// build service filter
+	matchSet := make(map[string]bool)
+	for _, m := range matchSvc {
+		matchSet[strings.ToLower(m)] = true
+	}
+
+	shouldPrint := func(sub *model.Subdomain) bool {
+		// --only filter
+		if len(filterStatus) > 0 && !filterStatus[sub.Status] {
+			return false
+		}
+		// --match filter
+		if len(matchSet) > 0 {
+			if !matchSet[strings.ToLower(sub.ServiceProvider)] {
+				return false
+			}
+		}
+		return true
+	}
 
 	processResults := func(results <-chan *model.Subdomain) {
 		for {
@@ -134,9 +201,13 @@ func run(cmd *cobra.Command, args []string) {
 				if jw != nil {
 					jw.Write(sub)
 				}
-				if !silent {
+				if !silent && shouldPrint(sub) {
 					output.ClearProgress()
 					output.PrintResult(sub, silent)
+					if inspect && (sub.Status == model.StatusSuspicious || sub.Status == model.StatusVulnerable) {
+						info := analyze.InspectDNS(ctx, resolver, sub)
+						analyze.PrintDNSInfo(sub.Domain, info)
+					}
 				}
 			case <-ticker.C:
 				if !silent {
@@ -149,9 +220,13 @@ func run(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	if subs != "" {
+	if stdinMode || subs != "" {
 		if !silent {
-			fmt.Printf("\n[*] Mode: file-based (%s)\n\n", subs)
+			label := "stdin"
+			if subs != "" {
+				label = subs
+			}
+			fmt.Printf("\n[*] Mode: file-based (%s)\n\n", label)
 		}
 		processResults(pipe.Run(ctx, ""))
 	} else {
@@ -172,6 +247,26 @@ func run(cmd *cobra.Command, args []string) {
 		fmt.Printf("  Alive       : %d\n", counts[model.StatusAlive])
 		fmt.Printf("  Total       : %d\n", total)
 	}
+}
+
+func parseStatusFilter(only string) map[model.Status]bool {
+	if only == "" {
+		return nil
+	}
+	m := make(map[model.Status]bool)
+	for _, s := range strings.Split(only, ",") {
+		switch strings.TrimSpace(strings.ToLower(s)) {
+		case "vulnerable":
+			m[model.StatusVulnerable] = true
+		case "suspicious":
+			m[model.StatusSuspicious] = true
+		case "nxdomain":
+			m[model.StatusNXDOMAIN] = true
+		case "alive":
+			m[model.StatusAlive] = true
+		}
+	}
+	return m
 }
 
 func doUpdate() {
@@ -225,11 +320,23 @@ func init() {
 	rootCmd.Flags().StringVar(&target, "target", "", "Single target domain")
 	rootCmd.Flags().StringVar(&targets, "targets", "", "File with list of domains")
 	rootCmd.Flags().StringVar(&subs, "subs", "", "File with pre-enumerated subdomains (skips crt.sh)")
-	rootCmd.Flags().IntVar(&threads, "threads", 50, "Concurrency (default 50)")
-	rootCmd.Flags().IntVar(&timeoutMs, "timeout", 3000, "DNS timeout in ms (default 3000)")
+	rootCmd.Flags().IntVar(&threads, "threads", 50, "Concurrency")
+	rootCmd.Flags().IntVar(&timeoutMs, "timeout", 3000, "DNS timeout in ms")
+	rootCmd.Flags().IntVar(&httpTimeout, "http-timeout", 5000, "HTTP timeout in ms")
+	rootCmd.Flags().IntVar(&retries, "retries", 3, "DNS retry count")
 	rootCmd.Flags().BoolVar(&jsonOutput, "json", false, "JSON output to stdout")
 	rootCmd.Flags().StringVarP(&outputFile, "output", "o", "", "Write JSON results to file")
 	rootCmd.Flags().StringSliceVarP(&resolvers, "resolvers", "r", []string{}, "Custom resolvers")
-	rootCmd.Flags().BoolVar(&silent, "silent", false, "Suppress terminal output, only write to -o file")
+	rootCmd.Flags().BoolVar(&silent, "silent", false, "Suppress terminal output")
 	rootCmd.Flags().BoolVar(&debug, "debug", false, "Debug mode: test enumeration only")
+	rootCmd.Flags().BoolVar(&inspect, "inspect", false, "Show DNS detail for suspicious/vulnerable")
+	rootCmd.Flags().BoolVar(&noHTTP, "no-http", false, "Skip HTTP probing (DNS-only mode)")
+	rootCmd.Flags().BoolVar(&cnameOnly, "cname-only", false, "Only process subdomains with CNAME records")
+	rootCmd.Flags().BoolVar(&noWildcard, "no-wildcard", false, "Disable wildcard detection")
+	rootCmd.Flags().StringVar(&onlyStatus, "only", "", "Filter output: vulnerable,suspicious,nxdomain,alive")
+	rootCmd.Flags().StringSliceVar(&exclude, "exclude", []string{}, "Exclude subdomains matching patterns (e.g. api,dev)")
+	rootCmd.Flags().StringSliceVar(&include, "include", []string{}, "Only include subdomains matching patterns (e.g. shop,admin)")
+	rootCmd.Flags().StringSliceVar(&matchSvc, "match", []string{}, "Only report specific services (e.g. heroku,github)")
+	rootCmd.Flags().StringVar(&fpFile, "fingerprints", "", "Custom fingerprints JSON file")
+	rootCmd.Flags().BoolVar(&verify, "verify", false, "Verify NXDOMAINs across multiple resolvers")
 }
