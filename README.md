@@ -1,3 +1,5 @@
+# SALAM
+---
 # subjackal
 
 > Subdomain takeover hunter — fast, modular, pipeline-based
