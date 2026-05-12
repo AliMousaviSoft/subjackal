@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"strings"
 	"sync"
 
 	"github.com/AliMousaviSoft/subjackal/internal/analyze"
@@ -17,6 +18,11 @@ type Config struct {
 	Prober     *probe.HTTPProber
 	Analyzer   *analyze.Analyzer
 	Enumerator enum.Enumerator
+	NoWildcard bool
+	CNAMEOnly  bool
+	Exclude    []string
+	Include    []string
+	Verify     bool
 }
 
 type Pipeline struct {
@@ -37,10 +43,9 @@ func (p *Pipeline) Run(ctx context.Context, domain string) <-chan *model.Subdoma
 			return
 		}
 
-		// skip wildcard detection in file mode (no root domain)
 		var isWildcard bool
 		var wildcardIP string
-		if domain != "" {
+		if domain != "" && !p.cfg.NoWildcard {
 			isWildcard, wildcardIP = p.cfg.Resolver.DetectWildcard(ctx, domain)
 		}
 
@@ -49,11 +54,22 @@ func (p *Pipeline) Run(ctx context.Context, domain string) <-chan *model.Subdoma
 
 		for sub := range subdomains {
 			sub := sub
+
+			// --exclude filter
+			if matchesAny(sub, p.cfg.Exclude) {
+				continue
+			}
+			// --include filter
+			if len(p.cfg.Include) > 0 && !matchesAny(sub, p.cfg.Include) {
+				continue
+			}
+
 			select {
 			case <-ctx.Done():
 				return
 			case sem <- struct{}{}:
 			}
+
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -75,11 +91,17 @@ func (p *Pipeline) Run(ctx context.Context, domain string) <-chan *model.Subdoma
 func (p *Pipeline) processSubdomain(ctx context.Context, subdomain, root string, isWildcard bool, wildcardIP string) *model.Subdomain {
 	sub := &model.Subdomain{Domain: subdomain, Root: root}
 
+	// CNAME chain first
 	chain, final, err := p.cfg.Resolver.ResolveCNAMEChain(ctx, subdomain)
 	if err == nil && len(chain) > 0 {
 		sub.RecordType = model.RecordCNAME
 		sub.CNAMEChain = chain
 		sub.CNAMETarget = final
+	}
+
+	// --cname-only: skip if no CNAME
+	if p.cfg.CNAMEOnly && sub.RecordType != model.RecordCNAME {
+		return nil
 	}
 
 	if sub.RecordType == "" {
@@ -117,9 +139,21 @@ func (p *Pipeline) processSubdomain(ctx context.Context, subdomain, root string,
 
 	p.cfg.Analyzer.Analyze(ctx, sub)
 
+	// HTTP probe only if prober exists (--no-http disables it)
 	if sub.Status == model.StatusSuspicious && p.cfg.Prober != nil {
 		p.cfg.Prober.Probe(ctx, sub)
 	}
 
 	return sub
+}
+
+// matchesAny checks if subdomain contains any of the patterns
+func matchesAny(subdomain string, patterns []string) bool {
+	lower := strings.ToLower(subdomain)
+	for _, p := range patterns {
+		if strings.Contains(lower, strings.ToLower(p)) {
+			return true
+		}
+	}
+	return false
 }
