@@ -2,6 +2,7 @@ package analyze
 
 import (
 	"context"
+	"strconv"
 	"strings"
 
 	"github.com/AliMousaviSoft/subjackal/internal/model"
@@ -19,8 +20,7 @@ func New(r *resolve.Resolver) *Analyzer {
 func (a *Analyzer) Analyze(ctx context.Context, sub *model.Subdomain) {
 	switch sub.RecordType {
 	case model.RecordNXDOMAIN:
-		sub.Status = model.StatusNXDOMAIN
-		sub.Note = "NXDOMAIN — no DNS record exists"
+		a.analyzeNXDOMAIN(ctx, sub)
 	case model.RecordCNAME:
 		a.analyzeCNAME(ctx, sub)
 	case model.RecordNS:
@@ -30,39 +30,72 @@ func (a *Analyzer) Analyze(ctx context.Context, sub *model.Subdomain) {
 	}
 }
 
+func (a *Analyzer) analyzeNXDOMAIN(ctx context.Context, sub *model.Subdomain) {
+	// even on NXDOMAIN, check for dangling CNAME
+	chain, final, err := a.resolver.ResolveCNAMEChain(ctx, sub.Domain)
+	if err == nil && len(chain) > 0 {
+		sub.RecordType = model.RecordCNAME
+		sub.CNAMEChain = chain
+		sub.CNAMETarget = final
+		a.analyzeCNAME(ctx, sub)
+		return
+	}
+
+	sub.Status = model.StatusNXDOMAIN
+	sub.Note = "NXDOMAIN — no DNS record exists"
+}
+
 func (a *Analyzer) analyzeCNAME(ctx context.Context, sub *model.Subdomain) {
 	if sub.CNAMETarget == "" {
 		sub.Status = model.StatusAlive
 		return
 	}
+
 	fp := MatchCNAME(sub.CNAMETarget)
 	if fp == nil {
 		sub.Status = model.StatusAlive
-		sub.Note = "CNAME to unknown service"
+		sub.Note = "CNAME to unknown service — " + sub.CNAMETarget
 		return
 	}
-	if !fp.TakeoverPossible {
-		sub.Status = model.StatusAlive
-		sub.ServiceProvider = fp.Name
-		sub.Note = "CNAME to " + fp.Name + " — takeover not possible"
-		return
-	}
-	nxdomain, err := a.resolver.IsNXDOMAIN(ctx, sub.CNAMETarget)
-	if err != nil {
-		sub.Note = "CNAME resolution error: " + err.Error()
-		return
-	}
+
 	sub.ServiceProvider = fp.Name
 	sub.Fingerprint = fp.HTTPFingerprint
-	if nxdomain {
+	sub.Score.CNAMEMatch = 70
+
+	if !fp.TakeoverPossible {
+		sub.Status = model.StatusAlive
+		sub.Note = "CNAME to " + fp.Name + " [" + fp.Status + "] — takeover not possible"
+		return
+	}
+
+	// for nxdomain_only services (Azure, Elastic Beanstalk etc.)
+	// confirmation comes from NXDOMAIN, not HTTP body
+	nxdomain, err := a.resolver.IsNXDOMAIN(ctx, sub.CNAMETarget)
+	if err == nil && nxdomain {
+		sub.Score.NXDOMAINBack = 20
+		if fp.NXDOMAINOnly {
+			// NXDOMAIN is the confirmation for these services
+			sub.Score.HTTPMatch = 100
+			sub.TakeoverPossible = true
+			sub.Status = model.StatusVulnerable
+			sub.Confidence = model.ConfidenceHigh
+			sub.Note = "CONFIRMED — " + fp.Name + " [" + fp.Status + "] CNAME target NXDOMAIN — score: " +
+				strconv.Itoa(sub.Score.Total())
+			return
+		}
+	}
+
+	total := sub.Score.Total()
+	sub.Confidence = sub.Score.Level()
+
+	if total >= 50 {
 		sub.TakeoverPossible = true
 		sub.Status = model.StatusSuspicious
-		sub.Confidence = model.ConfidenceMedium
-		sub.Note = "CNAME → " + fp.Name + " (NXDOMAIN) — HTTP probe needed"
+		sub.Note = buildNote(sub, nxdomain, fp.Status)
 	} else {
 		sub.Status = model.StatusAlive
-		sub.Confidence = model.ConfidenceLow
-		sub.Note = "CNAME → " + fp.Name + " — target resolves, HTTP probe required"
+		sub.Note = "CNAME → " + fp.Name + " [" + fp.Status + "] — score too low (" +
+			strconv.Itoa(total) + "/50)"
 	}
 }
 
@@ -78,6 +111,7 @@ func (a *Analyzer) analyzeNS(ctx context.Context, sub *model.Subdomain) {
 			continue
 		}
 		if nxdomain {
+			sub.Score.NSUnregistered = 150
 			sub.TakeoverPossible = true
 			sub.Status = model.StatusVulnerable
 			sub.Confidence = model.ConfidenceHigh
@@ -86,6 +120,16 @@ func (a *Analyzer) analyzeNS(ctx context.Context, sub *model.Subdomain) {
 		}
 	}
 	sub.Status = model.StatusAlive
+}
+
+func buildNote(sub *model.Subdomain, nxdomain bool, fpStatus string) string {
+	note := "CNAME → " + sub.ServiceProvider + " [" + fpStatus + "]"
+	if nxdomain {
+		note += " (backend NXDOMAIN)"
+	}
+	note += " — score: " + strconv.Itoa(sub.Score.Total())
+	note += " — HTTP probe required to confirm"
+	return note
 }
 
 func extractRootDomain(host string) string {

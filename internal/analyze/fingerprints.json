@@ -1,121 +1,472 @@
 {
   "services": [
     {
+      "name": "AWS/Elastic Beanstalk",
+      "cname_patterns": [".elasticbeanstalk.com"],
+      "http_fingerprint": "",
+      "nxdomain_only": true,
+      "status": "vulnerable",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/194"
+    },
+    {
+      "name": "AWS/Load Balancer (ELB)",
+      "cname_patterns": [".elb.amazonaws.com"],
+      "http_fingerprint": "",
+      "nxdomain_only": true,
+      "status": "not_vulnerable",
+      "status_codes": [],
+      "confidence": "low",
+      "takeover_possible": false,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/137"
+    },
+    {
+      "name": "AWS/S3",
+      "cname_patterns": [".s3.amazonaws.com", ".s3-website"],
+      "http_fingerprint": "the specified bucket does not exist",
+      "nxdomain_only": false,
+      "status": "vulnerable",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/36"
+    },
+    {
+      "name": "Agile CRM",
+      "cname_patterns": [".agilecrm.com"],
+      "http_fingerprint": "sorry, this page is no longer available.",
+      "nxdomain_only": false,
+      "status": "vulnerable",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/145"
+    },
+    {
+      "name": "Airee.ru",
+      "cname_patterns": [".airee.ru"],
+      "http_fingerprint": "ошибка 402. сервис айри.рф не оплачен",
+      "nxdomain_only": false,
+      "status": "vulnerable",
+      "status_codes": [402],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/104"
+    },
+    {
+      "name": "Anima",
+      "cname_patterns": [".animaapp.io"],
+      "http_fingerprint": "the page you were looking for does not exist.",
+      "nxdomain_only": false,
+      "status": "vulnerable",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/126"
+    },
+    {
+      "name": "Bitbucket",
+      "cname_patterns": [".bitbucket.io"],
+      "http_fingerprint": "repository not found",
+      "nxdomain_only": false,
+      "status": "vulnerable",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/97"
+    },
+    {
+      "name": "Campaign Monitor",
+      "cname_patterns": [".createsend.com"],
+      "http_fingerprint": "trying to access your account?",
+      "nxdomain_only": false,
+      "status": "vulnerable",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/275"
+    },
+    {
+      "name": "Canny",
+      "cname_patterns": [".canny.io"],
+      "http_fingerprint": "company not found",
+      "nxdomain_only": false,
+      "status": "vulnerable",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/114"
+    },
+    {
+      "name": "Cloudfront",
+      "cname_patterns": [".cloudfront.net"],
+      "http_fingerprint": "viewercertificateexception",
+      "nxdomain_only": false,
+      "status": "not_vulnerable",
+      "status_codes": [403],
+      "confidence": "low",
+      "takeover_possible": false,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/29"
+    },
+    {
+      "name": "Digital Ocean",
+      "cname_patterns": [".digitalocean.com"],
+      "http_fingerprint": "domain uses do name servers with no records in do.",
+      "nxdomain_only": false,
+      "status": "vulnerable",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": ""
+    },
+    {
+      "name": "Discourse",
+      "cname_patterns": [".trydiscourse.com"],
+      "http_fingerprint": "",
+      "nxdomain_only": true,
+      "status": "vulnerable",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/49"
+    },
+    {
+      "name": "Fastly",
+      "cname_patterns": [".fastly.net"],
+      "http_fingerprint": "fastly error: unknown domain:",
+      "nxdomain_only": false,
+      "status": "not_vulnerable",
+      "status_codes": [404],
+      "confidence": "low",
+      "takeover_possible": false,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/22"
+    },
+    {
+      "name": "Gemfury",
+      "cname_patterns": [".furyns.com"],
+      "http_fingerprint": "404: this page could not be found.",
+      "nxdomain_only": false,
+      "status": "vulnerable",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/154"
+    },
+    {
+      "name": "Ghost",
+      "cname_patterns": [".ghost.io"],
+      "http_fingerprint": "site unavailable",
+      "nxdomain_only": false,
+      "status": "vulnerable",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/89"
+    },
+    {
       "name": "GitHub Pages",
       "cname_patterns": [".github.io"],
-      "http_fingerprint": "there isn't a github pages site here",
+      "http_fingerprint": "there isn't a github pages site here.",
+      "nxdomain_only": false,
+      "status": "edge_case",
       "status_codes": [404],
       "confidence": "high",
       "takeover_possible": true,
       "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/37"
     },
     {
+      "name": "HatenaBlog",
+      "cname_patterns": [".hatenablog.com"],
+      "http_fingerprint": "404 blog is not found",
+      "nxdomain_only": false,
+      "status": "vulnerable",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": ""
+    },
+    {
+      "name": "Help Juice",
+      "cname_patterns": [".helpjuice.com"],
+      "http_fingerprint": "we could not find what you're looking for.",
+      "nxdomain_only": false,
+      "status": "vulnerable",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": ""
+    },
+    {
+      "name": "Help Scout",
+      "cname_patterns": [".helpscoutdocs.com"],
+      "http_fingerprint": "no settings were found for this company:",
+      "nxdomain_only": false,
+      "status": "vulnerable",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": ""
+    },
+    {
       "name": "Heroku",
       "cname_patterns": [".herokuapp.com", ".herokussl.com"],
       "http_fingerprint": "no such app",
+      "nxdomain_only": false,
+      "status": "edge_case",
       "status_codes": [404],
       "confidence": "high",
       "takeover_possible": true,
-      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/46"
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/38"
     },
     {
-      "name": "AWS S3",
-      "cname_patterns": [".s3.amazonaws.com", ".s3-website"],
-      "http_fingerprint": "nosuchbucket",
+      "name": "JetBrains",
+      "cname_patterns": [".youtrack.cloud"],
+      "http_fingerprint": "is not a registered incloud youtrack",
+      "nxdomain_only": false,
+      "status": "vulnerable",
       "status_codes": [404],
       "confidence": "high",
       "takeover_possible": true,
-      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/1"
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/pull/107"
     },
     {
-      "name": "Shopify",
-      "cname_patterns": [".myshopify.com"],
-      "http_fingerprint": "sorry, this shop is currently unavailable",
-      "status_codes": [404],
-      "confidence": "high",
-      "takeover_possible": true,
-      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/32"
-    },
-    {
-      "name": "Fastly",
-      "cname_patterns": [".fastly.net"],
-      "http_fingerprint": "fastly error: unknown domain",
-      "status_codes": [404],
-      "confidence": "medium",
-      "takeover_possible": true,
-      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/22"
-    },
-    {
-      "name": "Ghost",
-      "cname_patterns": [".ghost.io"],
-      "http_fingerprint": "the thing you were looking for is no longer here",
-      "status_codes": [404],
-      "confidence": "high",
-      "takeover_possible": true,
-      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/14"
-    },
-    {
-      "name": "Netlify",
-      "cname_patterns": [".netlify.app", ".netlify.com"],
-      "http_fingerprint": "not found - request id",
-      "status_codes": [404],
-      "confidence": "medium",
-      "takeover_possible": true,
-      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/67"
-    },
-    {
-      "name": "Vercel",
-      "cname_patterns": [".vercel.app", ".now.sh"],
-      "http_fingerprint": "the deployment you are trying to access does not exist",
-      "status_codes": [404],
-      "confidence": "high",
-      "takeover_possible": true,
-      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/63"
-    },
-    {
-      "name": "Azure",
-      "cname_patterns": [".azurewebsites.net", ".cloudapp.net", ".cloudapp.azure.com"],
-      "http_fingerprint": "404 web site not found",
+      "name": "Microsoft Azure",
+      "cname_patterns": [
+        ".cloudapp.net", ".cloudapp.azure.com", ".azurewebsites.net",
+        ".blob.core.windows.net", ".azure-api.net", ".azurehdinsight.net",
+        ".azureedge.net", ".azurecontainer.io", ".database.windows.net",
+        ".azuredatalakestore.net", ".search.windows.net", ".azurecr.io",
+        ".redis.cache.windows.net", ".servicebus.windows.net", ".visualstudio.com"
+      ],
+      "http_fingerprint": "",
+      "nxdomain_only": true,
+      "status": "vulnerable",
       "status_codes": [404],
       "confidence": "high",
       "takeover_possible": true,
       "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/35"
     },
     {
-      "name": "Zendesk",
-      "cname_patterns": [".zendesk.com"],
-      "http_fingerprint": "help center closed",
+      "name": "Netlify",
+      "cname_patterns": [".netlify.app", ".netlify.com"],
+      "http_fingerprint": "not found - request id:",
+      "nxdomain_only": false,
+      "status": "edge_case",
+      "status_codes": [404],
+      "confidence": "medium",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/40"
+    },
+    {
+      "name": "Ngrok",
+      "cname_patterns": [".ngrok.io"],
+      "http_fingerprint": "tunnel *.ngrok.io not found",
+      "nxdomain_only": false,
+      "status": "vulnerable",
       "status_codes": [404],
       "confidence": "high",
       "takeover_possible": true,
-      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/23"
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/92"
+    },
+    {
+      "name": "Pantheon",
+      "cname_patterns": [".pantheonsite.io"],
+      "http_fingerprint": "404 error unknown site!",
+      "nxdomain_only": false,
+      "status": "vulnerable",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/24"
+    },
+    {
+      "name": "Pingdom",
+      "cname_patterns": [".pingdom.com"],
+      "http_fingerprint": "sorry, couldn't find the status page",
+      "nxdomain_only": false,
+      "status": "vulnerable",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/144"
+    },
+    {
+      "name": "Readme.io",
+      "cname_patterns": [".readme.io"],
+      "http_fingerprint": "the creators of this project are still working on making everything perfect!",
+      "nxdomain_only": false,
+      "status": "vulnerable",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/41"
+    },
+    {
+      "name": "Readthedocs",
+      "cname_patterns": [".readthedocs.io"],
+      "http_fingerprint": "the link you have followed or the url that you entered does not exist.",
+      "nxdomain_only": false,
+      "status": "vulnerable",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/160"
+    },
+    {
+      "name": "Shopify",
+      "cname_patterns": [".myshopify.com"],
+      "http_fingerprint": "sorry, this shop is currently unavailable.",
+      "nxdomain_only": false,
+      "status": "edge_case",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/32"
+    },
+    {
+      "name": "Short.io",
+      "cname_patterns": [".short.io"],
+      "http_fingerprint": "link does not exist",
+      "nxdomain_only": false,
+      "status": "vulnerable",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/260"
+    },
+    {
+      "name": "SmartJobBoard",
+      "cname_patterns": ["52.16.160.97"],
+      "http_fingerprint": "this job board website is either expired or its domain name is invalid.",
+      "nxdomain_only": false,
+      "status": "vulnerable",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/139"
+    },
+    {
+      "name": "Strikingly",
+      "cname_patterns": [".s.strikinglydns.com"],
+      "http_fingerprint": "page not found.",
+      "nxdomain_only": false,
+      "status": "vulnerable",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/58"
+    },
+    {
+      "name": "Surge.sh",
+      "cname_patterns": [".surge.sh", ".na-west1.surge.sh"],
+      "http_fingerprint": "project not found",
+      "nxdomain_only": false,
+      "status": "vulnerable",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/198"
+    },
+    {
+      "name": "SurveySparrow",
+      "cname_patterns": [".surveysparrow.com"],
+      "http_fingerprint": "account not found.",
+      "nxdomain_only": false,
+      "status": "vulnerable",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/281"
     },
     {
       "name": "Tumblr",
       "cname_patterns": [".tumblr.com"],
-      "http_fingerprint": "there's nothing here",
+      "http_fingerprint": "whatever you were looking for doesn't currently exist at this address",
+      "nxdomain_only": false,
+      "status": "edge_case",
       "status_codes": [404],
       "confidence": "high",
       "takeover_possible": true,
-      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/4"
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/240"
     },
     {
-      "name": "Surge.sh",
-      "cname_patterns": [".surge.sh"],
-      "http_fingerprint": "project not found",
+      "name": "Uberflip",
+      "cname_patterns": [".read.uberflip.com"],
+      "http_fingerprint": "the url you've accessed does not provide a hub.",
+      "nxdomain_only": false,
+      "status": "vulnerable",
       "status_codes": [404],
       "confidence": "high",
       "takeover_possible": true,
-      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/2"
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/150"
+    },
+    {
+      "name": "Uptimerobot",
+      "cname_patterns": [".stats.uptimerobot.com"],
+      "http_fingerprint": "page not found",
+      "nxdomain_only": false,
+      "status": "vulnerable",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/45"
     },
     {
       "name": "Vercel",
       "cname_patterns": [".vercel.app", ".now.sh"],
-      "http_fingerprint": "the deployment you are trying to access does not exist",
+      "http_fingerprint": "deployment_not_found",
+      "nxdomain_only": false,
+      "status": "edge_case",
       "status_codes": [404],
       "confidence": "high",
       "takeover_possible": true,
-      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/63"
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/183"
+    },
+    {
+      "name": "Webflow",
+      "cname_patterns": [".webflow.io"],
+      "http_fingerprint": "the page you are looking for doesn't exist or has been moved.",
+      "nxdomain_only": false,
+      "status": "edge_case",
+      "status_codes": [404],
+      "confidence": "medium",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/44"
+    },
+    {
+      "name": "Wix",
+      "cname_patterns": [".wixdns.net"],
+      "http_fingerprint": "looks like this domain isn't connected to a website yet!",
+      "nxdomain_only": false,
+      "status": "edge_case",
+      "status_codes": [404],
+      "confidence": "medium",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/231"
+    },
+    {
+      "name": "WordPress",
+      "cname_patterns": [".wordpress.com"],
+      "http_fingerprint": "do you want to register",
+      "nxdomain_only": false,
+      "status": "vulnerable",
+      "status_codes": [404],
+      "confidence": "high",
+      "takeover_possible": true,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/pull/176"
+    },
+    {
+      "name": "Zendesk",
+      "cname_patterns": [".zendesk.com"],
+      "http_fingerprint": "help center closed",
+      "nxdomain_only": false,
+      "status": "not_vulnerable",
+      "status_codes": [404],
+      "confidence": "low",
+      "takeover_possible": false,
+      "discussion": "https://github.com/EdOverflow/can-i-take-over-xyz/issues/23"
     }
   ]
 }
