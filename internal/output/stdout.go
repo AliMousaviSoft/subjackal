@@ -33,7 +33,7 @@ func ClearProgress() {
 func PrintBanner(target string) {
 	fmt.Printf("%s", colorCyan)
 	fmt.Printf("                                                         \n")
-	fmt.Printf("  ----.                                                  \n")
+	fmt.Printf("      -----.                                             \n")
 	fmt.Printf("      \"   _}                                             \n")
 	fmt.Printf("      \"@   >                                             \n")
 	fmt.Printf("      |\\   7                                             \n")
