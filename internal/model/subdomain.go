@@ -17,6 +17,7 @@ const (
 	StatusNXDOMAIN   Status = "nxdomain"
 	StatusSuspicious Status = "suspicious"
 	StatusVulnerable Status = "vulnerable"
+	StatusDismissed  Status = "dismissed" // was candidate, chain resolved to IP
 )
 
 type Confidence string

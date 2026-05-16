@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"fmt"
 
 	"github.com/AliMousaviSoft/subjackal/internal/analyze"
 	"github.com/AliMousaviSoft/subjackal/internal/enum"
@@ -91,19 +92,27 @@ func (p *Pipeline) Run(ctx context.Context, domain string) <-chan *model.Subdoma
 func (p *Pipeline) processSubdomain(ctx context.Context, subdomain, root string, isWildcard bool, wildcardIP string) *model.Subdomain {
 	sub := &model.Subdomain{Domain: subdomain, Root: root}
 
-	// CNAME chain first
-	chain, final, err := p.cfg.Resolver.ResolveCNAMEChain(ctx, subdomain)
+	// walk full CNAME chain + resolve final A record
+	chain, final, finalIPs, err := p.cfg.Resolver.ResolveCNAMEChain(ctx, subdomain)
 	if err == nil && len(chain) > 0 {
-		sub.RecordType = model.RecordCNAME
 		sub.CNAMEChain = chain
 		sub.CNAMETarget = final
+
+		// after CNAME chain resolves to IPs:
+		if len(finalIPs) > 0 {
+			sub.RecordType = model.RecordA
+			sub.IPs = finalIPs
+			sub.Status = model.StatusDismissed
+			sub.Note = fmt.Sprintf("CNAME chain resolves → %s (%s) — not dangling",
+				final, strings.Join(finalIPs, ", "))
+			return sub
+		}
+
+		// final hop is NXDOMAIN → genuinely dangling
+		sub.RecordType = model.RecordCNAME
 	}
 
-	// --cname-only: skip if no CNAME
-	if p.cfg.CNAMEOnly && sub.RecordType != model.RecordCNAME {
-		return nil
-	}
-
+	// no CNAME — try direct A
 	if sub.RecordType == "" {
 		ips, err := p.cfg.Resolver.LookupA(ctx, subdomain)
 		if err == nil && len(ips) > 0 {
@@ -122,6 +131,7 @@ func (p *Pipeline) processSubdomain(ctx context.Context, subdomain, root string,
 		}
 	}
 
+	// NS check
 	if sub.RecordType == "" {
 		ns, err := p.cfg.Resolver.LookupNS(ctx, subdomain)
 		if err == nil && len(ns) > 0 {
@@ -130,6 +140,7 @@ func (p *Pipeline) processSubdomain(ctx context.Context, subdomain, root string,
 		}
 	}
 
+	// NXDOMAIN — confirmed across multiple resolvers
 	if sub.RecordType == "" {
 		nxdomain, err := p.cfg.Resolver.IsNXDOMAIN(ctx, subdomain)
 		if err == nil && nxdomain {
@@ -139,7 +150,6 @@ func (p *Pipeline) processSubdomain(ctx context.Context, subdomain, root string,
 
 	p.cfg.Analyzer.Analyze(ctx, sub)
 
-	// HTTP probe only if prober exists (--no-http disables it)
 	if sub.Status == model.StatusSuspicious && p.cfg.Prober != nil {
 		p.cfg.Prober.Probe(ctx, sub)
 	}

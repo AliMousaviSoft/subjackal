@@ -32,7 +32,7 @@ func (a *Analyzer) Analyze(ctx context.Context, sub *model.Subdomain) {
 
 func (a *Analyzer) analyzeNXDOMAIN(ctx context.Context, sub *model.Subdomain) {
 	// even on NXDOMAIN, check for dangling CNAME
-	chain, final, err := a.resolver.ResolveCNAMEChain(ctx, sub.Domain)
+	chain, final, _, err := a.resolver.ResolveCNAMEChain(ctx, sub.Domain)
 	if err == nil && len(chain) > 0 {
 		sub.RecordType = model.RecordCNAME
 		sub.CNAMEChain = chain

@@ -10,7 +10,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
-
+	
+	validatepkg "github.com/AliMousaviSoft/subjackal/internal/validate"
 	"github.com/AliMousaviSoft/subjackal/internal/analyze"
 	"github.com/AliMousaviSoft/subjackal/internal/enum"
 	"github.com/AliMousaviSoft/subjackal/internal/model"
@@ -45,6 +46,8 @@ var (
 	matchSvc    []string
 	fpFile      string
 	verify      bool
+	validate bool
+	verbose bool
 )
 
 var rootCmd = &cobra.Command{
@@ -163,7 +166,7 @@ func run(cmd *cobra.Command, args []string) {
 	counts := map[model.Status]int{}
 	total := 0
 	frame := 0
-
+	var dismissed []*model.Subdomain // collect dismissed separately
 	ticker := time.NewTicker(80 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -176,18 +179,23 @@ func run(cmd *cobra.Command, args []string) {
 	}
 
 	shouldPrint := func(sub *model.Subdomain) bool {
-		// --only filter
+		if sub.Status == model.StatusDismissed {
+			return false // handled separately
+		}
 		if len(filterStatus) > 0 && !filterStatus[sub.Status] {
 			return false
 		}
-		// --match filter
 		if len(matchSet) > 0 {
-			if !matchSet[strings.ToLower(sub.ServiceProvider)] {
-				return false
+			if sub.Status == model.StatusSuspicious || sub.Status == model.StatusVulnerable {
+				if !matchSet[strings.ToLower(sub.ServiceProvider)] {
+					return false
+				}
 			}
 		}
 		return true
 	}
+
+	
 
 	processResults := func(results <-chan *model.Subdomain) {
 		for {
@@ -196,24 +204,43 @@ func run(cmd *cobra.Command, args []string) {
 				if !ok {
 					return
 				}
+
 				total++
 				counts[sub.Status]++
+
 				if jw != nil {
 					jw.Write(sub)
 				}
+
+				// collect dismissed separately
+				if sub.Status == model.StatusDismissed {
+					if verbose {
+						dismissed = append(dismissed, sub)
+					}
+					continue
+				}
+
 				if !silent && shouldPrint(sub) {
 					output.ClearProgress()
 					output.PrintResult(sub, silent)
+
 					if inspect && (sub.Status == model.StatusSuspicious || sub.Status == model.StatusVulnerable) {
 						info := analyze.InspectDNS(ctx, resolver, sub)
 						analyze.PrintDNSInfo(sub.Domain, info)
 					}
+
+					if validate && (sub.Status == model.StatusSuspicious || sub.Status == model.StatusVulnerable) {
+						report := validatepkg.Validate(ctx, resolver, sub)
+						validatepkg.PrintReport(report)
+					}
 				}
+
 			case <-ticker.C:
 				if !silent {
 					output.PrintProgress(total, frame)
 					frame++
 				}
+
 			case <-ctx.Done():
 				return
 			}
@@ -245,7 +272,18 @@ func run(cmd *cobra.Command, args []string) {
 		fmt.Printf("  Suspicious  : %d\n", counts[model.StatusSuspicious])
 		fmt.Printf("  NXDOMAIN    : %d\n", counts[model.StatusNXDOMAIN])
 		fmt.Printf("  Alive       : %d\n", counts[model.StatusAlive])
+		fmt.Printf("  Dismissed   : %d\n", counts[model.StatusDismissed])
 		fmt.Printf("  Total       : %d\n", total)
+
+		// print dismissed section at the end if --verbose
+		if verbose && len(dismissed) > 0 {
+			fmt.Printf("\n%s--- Dismissed Candidates ---%s\n", "\033[1m\033[33m", "\033[0m")
+			fmt.Printf("%s(had CNAME to known service but chain resolved to live IP)%s\n\n",
+				"\033[90m", "\033[0m")
+			for _, sub := range dismissed {
+				output.PrintDismissed(sub)
+			}
+		}
 	}
 }
 
@@ -264,6 +302,8 @@ func parseStatusFilter(only string) map[model.Status]bool {
 			m[model.StatusNXDOMAIN] = true
 		case "alive":
 			m[model.StatusAlive] = true
+		case "dismissed":
+    		m[model.StatusDismissed] = true
 		}
 	}
 	return m
@@ -339,4 +379,7 @@ func init() {
 	rootCmd.Flags().StringSliceVar(&matchSvc, "match", []string{}, "Only report specific services (e.g. heroku,github)")
 	rootCmd.Flags().StringVar(&fpFile, "fingerprints", "", "Custom fingerprints JSON file")
 	rootCmd.Flags().BoolVar(&verify, "verify", false, "Verify NXDOMAINs across multiple resolvers")
+	rootCmd.Flags().BoolVar(&validate, "validate", false, "Run deep validation on suspicious/vulnerable findings")
+	rootCmd.Flags().BoolVar(&verbose, "verbose", false, "Show dismissed candidates with reasons")
+
 }

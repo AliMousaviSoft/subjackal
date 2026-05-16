@@ -195,18 +195,21 @@ func (r *Resolver) DetectWildcard(ctx context.Context, domain string) (bool, str
 	return true, ips[0]
 }
 
-func (r *Resolver) ResolveCNAMEChain(ctx context.Context, host string) (chain []string, final string, err error) {
+func (r *Resolver) ResolveCNAMEChain(ctx context.Context, host string) (chain []string, final string, finalIPs []string, err error) {
 	current := host
 	seen := make(map[string]bool)
+
 	for {
 		if seen[current] {
 			break
 		}
 		seen[current] = true
+
 		resp, err := r.query(ctx, current, dns.TypeCNAME)
 		if err != nil {
-			return chain, current, nil
+			break
 		}
+
 		var next string
 		for _, rr := range resp.Answer {
 			if cname, ok := rr.(*dns.CNAME); ok {
@@ -217,16 +220,25 @@ func (r *Resolver) ResolveCNAMEChain(ctx context.Context, host string) (chain []
 		if next == "" {
 			break
 		}
+
 		chain = append(chain, next)
 		current = next
+
 		select {
 		case <-ctx.Done():
-			return chain, current, ctx.Err()
+			return chain, current, nil, ctx.Err()
 		default:
 		}
 	}
+
 	final = strings.TrimSuffix(current, ".")
-	return chain, final, nil
+
+	// always resolve final hop A records — this is the critical fix
+	// Azure/Cloudflare chains end with an A record, not another CNAME
+	ips, _ := r.LookupA(ctx, final)
+	finalIPs = ips
+
+	return chain, final, finalIPs, nil
 }
 
 func IsReachable(host string, timeout time.Duration) bool {

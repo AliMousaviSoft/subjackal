@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/AliMousaviSoft/subjackal/internal/model"
 )
@@ -15,6 +16,7 @@ const (
 	colorYellow = "\033[33m"
 	colorCyan   = "\033[36m"
 	colorBold   = "\033[1m"
+	colorGray   = "\033[0;37m"
 )
 
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
@@ -24,6 +26,18 @@ func PrintProgress(total int, frame int) {
 	fmt.Fprintf(os.Stderr, "\r%s%s Processing... (%d resolved)%s",
 		colorCyan, spinner, total, colorReset,
 	)
+}
+
+func PrintDismissed(sub *model.Subdomain) {
+	fmt.Printf("%s[DISMISSED]%s  %s\n", colorGray, colorReset, sub.Domain)
+	if len(sub.CNAMEChain) > 0 {
+		fmt.Printf("             cname      : %s\n", strings.Join(sub.CNAMEChain, " → "))
+	}
+	if len(sub.IPs) > 0 {
+		fmt.Printf("             resolves to: %s\n", strings.Join(sub.IPs, ", "))
+	}
+	fmt.Printf("             reason     : %s\n", sub.Note)
+	fmt.Println()
 }
 
 func ClearProgress() {
@@ -91,6 +105,12 @@ func PrintResult(sub *model.Subdomain, silent bool) {
 	case model.StatusAlive:
 		if !silent {
 			fmt.Printf("%s[ALIVE]%s      %s\n", colorGreen, colorReset, sub.Domain)
+		}
+		
+	case model.StatusDismissed:
+		if !silent {
+			fmt.Printf("%s[DISMISSED]%s  %s — %s\n",
+			colorGray, colorReset, sub.Domain, sub.Note)
 		}
 	}
 }
