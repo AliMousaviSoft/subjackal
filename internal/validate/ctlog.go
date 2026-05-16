@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -12,6 +13,7 @@ type CTLogResult struct {
 	Found      bool
 	IssuedDate string
 	Issuer     string
+	Total      int
 }
 
 func CheckCTLog(ctx context.Context, domain string) CTLogResult {
@@ -43,25 +45,41 @@ func CheckCTLog(ctx context.Context, domain string) CTLogResult {
 		return CTLogResult{Found: false}
 	}
 
-	// most recent cert
 	latest := entries[0]
+
+	// extract CN= value from issuer string
+	// e.g. "C=US, O=Let's Encrypt, CN=R11" → "Let's Encrypt"
+	issuer := extractIssuerOrg(latest.IssuerName)
+
 	date := ""
 	if len(latest.NotBefore) >= 10 {
 		date = latest.NotBefore[:10]
-	}
-
-	// extract CN from issuer
-	issuer := latest.IssuerName
-	for _, part := range []string{"Let's Encrypt", "DigiCert", "Sectigo", "GlobalSign", "Microsoft", "Amazon"} {
-		if len(issuer) > 0 {
-			issuer = part
-			break
-		}
 	}
 
 	return CTLogResult{
 		Found:      true,
 		IssuedDate: date,
 		Issuer:     issuer,
+		Total:      len(entries),
 	}
+}
+
+// extractIssuerOrg pulls O= field from issuer DN string
+// e.g. "C=US, O=DigiCert Inc, CN=DigiCert TLS RSA SHA256 2020 CA1" → "DigiCert Inc"
+func extractIssuerOrg(issuerDN string) string {
+	parts := strings.Split(issuerDN, ",")
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if strings.HasPrefix(part, "O=") {
+			return strings.TrimPrefix(part, "O=")
+		}
+	}
+	// fallback: return CN= if no O=
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if strings.HasPrefix(part, "CN=") {
+			return strings.TrimPrefix(part, "CN=")
+		}
+	}
+	return issuerDN
 }

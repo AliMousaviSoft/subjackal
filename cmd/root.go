@@ -232,6 +232,10 @@ func run(cmd *cobra.Command, args []string) {
 					if validate && (sub.Status == model.StatusSuspicious || sub.Status == model.StatusVulnerable) {
 						report := validatepkg.Validate(ctx, resolver, sub)
 						validatepkg.PrintReport(report)
+						// save validate report to file if -o given
+						if outputFile != "" {
+							report.WriteJSON(outputFile + ".validate.json")
+						}
 					}
 				}
 

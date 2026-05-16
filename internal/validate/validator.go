@@ -2,7 +2,9 @@ package validate
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/AliMousaviSoft/subjackal/internal/model"
@@ -20,18 +22,18 @@ const (
 )
 
 type ValidationReport struct {
-	Domain       string
-	Provider     string
-	CNAMEChain   []string
-	FinalTarget  string
-	FinalIPs     []string
-	Wayback      WaybackResult
-	CTLog        CTLogResult
-	Verification VerificationResult
-	Provider_    ProviderResult
-	Verdict      string
-	VerdictScore int
-	ScoreBreakdown []string
+	Domain         string          `json:"domain"`
+	Provider       string          `json:"provider"`
+	CNAMEChain     []string        `json:"cname_chain"`
+	FinalTarget    string          `json:"final_target"`
+	FinalIPs       []string        `json:"final_ips"`
+	Wayback        WaybackResult   `json:"wayback"`
+	CTLog          CTLogResult     `json:"ct_log"`
+	Verification   VerificationResult `json:"verification"`
+	ProviderCheck  ProviderResult  `json:"provider_check"`
+	Verdict        string          `json:"verdict"`
+	VerdictScore   int             `json:"verdict_score"`
+	ScoreBreakdown []string        `json:"score_breakdown"`
 }
 
 func Validate(ctx context.Context, r *resolve.Resolver, sub *model.Subdomain) *ValidationReport {
@@ -40,26 +42,20 @@ func Validate(ctx context.Context, r *resolve.Resolver, sub *model.Subdomain) *V
 		Provider:    sub.ServiceProvider,
 		CNAMEChain:  sub.CNAMEChain,
 		FinalTarget: sub.CNAMETarget,
-		FinalIPs:    sub.IPs, // already resolved in pipeline
+		FinalIPs:    sub.IPs,
 	}
 
-	// resolve final target IPs
-	if sub.CNAMETarget != "" {
-		ips, _ := r.LookupA(ctx, sub.CNAMETarget)
-		report.FinalIPs = ips
-	}
-
-	// run all checks
 	report.Wayback = CheckWayback(ctx, sub.Domain)
 	report.CTLog = CheckCTLog(ctx, sub.Domain)
 	report.Verification = CheckVerification(ctx, r, sub.Domain, sub.ServiceProvider)
-	report.Provider_ = CheckProvider(ctx, sub.Domain, sub.ServiceProvider)
+	report.ProviderCheck = CheckProvider(ctx, sub.Domain, sub.ServiceProvider)
 
-	// scoring with breakdown
 	score := 0
+	signals := 0 // count positive signals
 
 	if report.Wayback.Found {
 		score += 20
+		signals++
 		report.ScoreBreakdown = append(report.ScoreBreakdown,
 			fmt.Sprintf("+20 wayback: was indexed (last seen %s, %d snapshots)",
 				report.Wayback.LastSeen, report.Wayback.Total))
@@ -70,9 +66,10 @@ func Validate(ctx context.Context, r *resolve.Resolver, sub *model.Subdomain) *V
 
 	if report.CTLog.Found {
 		score += 20
+		signals++
 		report.ScoreBreakdown = append(report.ScoreBreakdown,
-			fmt.Sprintf("+20 ct log: cert issued %s via %s",
-				report.CTLog.IssuedDate, report.CTLog.Issuer))
+			fmt.Sprintf("+20 ct log: cert issued %s via %s (total: %d certs)",
+				report.CTLog.IssuedDate, report.CTLog.Issuer, report.CTLog.Total))
 	} else {
 		report.ScoreBreakdown = append(report.ScoreBreakdown,
 			"+0  ct log: no certificate history")
@@ -80,33 +77,32 @@ func Validate(ctx context.Context, r *resolve.Resolver, sub *model.Subdomain) *V
 
 	if !report.Verification.Locked {
 		score += 30
+		signals++
 		report.ScoreBreakdown = append(report.ScoreBreakdown,
-			"+30 verification: no ownership lock in DNS")
+			"+30 verification: no provider ownership lock in DNS")
 	} else {
 		report.ScoreBreakdown = append(report.ScoreBreakdown,
 			fmt.Sprintf("+0  verification: LOCKED — %s", report.Verification.Reason))
 	}
 
-	// replace the provider HTTP scoring block with this:
-	if report.Provider_.Reclaimable {
+	if report.ProviderCheck.Reclaimable {
 		score += 30
+		signals++
 		report.ScoreBreakdown = append(report.ScoreBreakdown,
 			fmt.Sprintf("+30 provider http: reclaimable — %s (HTTP %d)",
-				report.Provider_.Reason, report.Provider_.HTTPStatus))
-	} else if report.Provider_.HTTPStatus == 0 && len(report.FinalIPs) == 0 {
-		// HTTP unreachable because domain is NXDOMAIN — this is expected for dangling
-		// don't penalize, treat as neutral
+				report.ProviderCheck.Reason, report.ProviderCheck.HTTPStatus))
+	} else if report.ProviderCheck.HTTPStatus == 0 && len(report.FinalIPs) == 0 {
 		report.ScoreBreakdown = append(report.ScoreBreakdown,
 			"+0  provider http: unreachable (expected — final target is NXDOMAIN)")
 	} else {
 		report.ScoreBreakdown = append(report.ScoreBreakdown,
 			fmt.Sprintf("+0  provider http: not reclaimable — %s (HTTP %d)",
-				report.Provider_.Reason, report.Provider_.HTTPStatus))
+				report.ProviderCheck.Reason, report.ProviderCheck.HTTPStatus))
 	}
 
-	// penalty: if final target IPs exist, chain is not dangling
 	if len(report.FinalIPs) == 0 && report.FinalTarget != "" {
 		score += 20
+		signals++
 		report.ScoreBreakdown = append(report.ScoreBreakdown,
 			"+20 final target: NXDOMAIN confirmed — chain is genuinely dangling")
 	} else if len(report.FinalIPs) > 0 {
@@ -116,12 +112,18 @@ func Validate(ctx context.Context, r *resolve.Resolver, sub *model.Subdomain) *V
 				strings.Join(report.FinalIPs, ", ")))
 	}
 
+	if score < 0 {
+		score = 0
+	}
+
 	report.VerdictScore = score
 
+	// require at least 2 positive signals for MEDIUM
+	// prevents single-signal noise from reaching actionable verdict
 	switch {
-	case score >= 80:
+	case score >= 80 && signals >= 3:
 		report.Verdict = "HIGH — worth manual attempt"
-	case score >= 50:
+	case score >= 50 && signals >= 2:
 		report.Verdict = "MEDIUM — investigate further"
 	case score >= 30:
 		report.Verdict = "LOW — likely false positive"
@@ -132,36 +134,44 @@ func Validate(ctx context.Context, r *resolve.Resolver, sub *model.Subdomain) *V
 	return report
 }
 
+// WriteJSON appends a validation report to a JSON file
+func (r *ValidationReport) WriteJSON(path string) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	enc := json.NewEncoder(f)
+	enc.SetIndent("", "  ")
+	return enc.Encode(r)
+}
+
 func PrintReport(r *ValidationReport) {
 	fmt.Printf("\n%s[VALIDATE]%s %s%s%s\n",
 		colorBold, colorReset,
 		colorCyan, r.Domain, colorReset,
 	)
 
-	// CNAME chain
 	if len(r.CNAMEChain) > 0 {
 		fmt.Printf("  %s│%s\n", colorGray, colorReset)
 		fmt.Printf("  %s├── CNAME chain%s\n", colorGray, colorReset)
-		fmt.Printf("  %s│   %s%s%s\n", colorGray, colorCyan,
-			strings.Join(r.CNAMEChain, "\n  │   → "), colorReset)
-
+		for _, hop := range r.CNAMEChain {
+			fmt.Printf("  %s│   → %s%s%s\n", colorGray, colorCyan, hop, colorReset)
+		}
 		if r.FinalTarget != "" {
 			if len(r.FinalIPs) > 0 {
-				fmt.Printf("  %s│   → final: %s%s%s (%s%s✓ resolves to %s%s)\n",
-					colorGray,
-					colorGreen, r.FinalTarget, colorReset,
-					colorGreen, "", strings.Join(r.FinalIPs, ", "), colorReset)
+				fmt.Printf("  %s│   → final: %s%s%s (%s✓ %s%s)\n",
+					colorGray, colorGreen, r.FinalTarget, colorReset,
+					colorGreen, strings.Join(r.FinalIPs, ", "), colorReset)
 			} else {
 				fmt.Printf("  %s│   → final: %s%s%s (%sNXDOMAIN — dangling%s)\n",
-					colorGray,
-					colorRed, r.FinalTarget, colorReset,
+					colorGray, colorRed, r.FinalTarget, colorReset,
 					colorRed, colorReset)
 			}
 		}
 		fmt.Printf("  %s│%s\n", colorGray, colorReset)
 	}
 
-	// Wayback
 	if r.Wayback.Found {
 		fmt.Printf("  %s├── Wayback check   %s: %slast seen %s (%d snapshots)%s\n",
 			colorGreen, colorReset, colorGreen, r.Wayback.LastSeen, r.Wayback.Total, colorReset)
@@ -170,34 +180,33 @@ func PrintReport(r *ValidationReport) {
 			colorYellow, colorReset, colorYellow, colorReset)
 	}
 
-	// CT Log
 	if r.CTLog.Found {
-		fmt.Printf("  %s├── CT log check    %s: %scert issued %s (%s)%s\n",
-			colorGreen, colorReset, colorGreen, r.CTLog.IssuedDate, r.CTLog.Issuer, colorReset)
+		fmt.Printf("  %s├── CT log check    %s: %scert issued %s via %s (total: %d)%s\n",
+			colorGreen, colorReset, colorGreen,
+			r.CTLog.IssuedDate, r.CTLog.Issuer, r.CTLog.Total, colorReset)
 	} else {
 		fmt.Printf("  %s├── CT log check    %s: %sno cert history%s\n",
 			colorYellow, colorReset, colorYellow, colorReset)
 	}
 
-	// Verification DNS
 	if r.Verification.Locked {
 		fmt.Printf("  %s├── Verification DNS%s: %sLOCKED — %s%s\n",
 			colorRed, colorReset, colorRed, r.Verification.Reason, colorReset)
 	} else {
-		fmt.Printf("  %s├── Verification DNS%s: %sno ownership lock found%s\n",
+		fmt.Printf("  %s├── Verification DNS%s: %sno provider ownership lock%s\n",
 			colorGreen, colorReset, colorGreen, colorReset)
 	}
 
-	// Provider HTTP
-	if r.Provider_.Reclaimable {
+	if r.ProviderCheck.Reclaimable {
 		fmt.Printf("  %s├── Provider HTTP   %s: %sRECLAIMABLE — %s (HTTP %d)%s\n",
-			colorGreen, colorReset, colorGreen, r.Provider_.Reason, r.Provider_.HTTPStatus, colorReset)
+			colorGreen, colorReset, colorGreen,
+			r.ProviderCheck.Reason, r.ProviderCheck.HTTPStatus, colorReset)
 	} else {
 		fmt.Printf("  %s├── Provider HTTP   %s: %s%s (HTTP %d)%s\n",
-			colorRed, colorReset, colorRed, r.Provider_.Reason, r.Provider_.HTTPStatus, colorReset)
+			colorRed, colorReset, colorRed,
+			r.ProviderCheck.Reason, r.ProviderCheck.HTTPStatus, colorReset)
 	}
 
-	// Score breakdown
 	fmt.Printf("  %s│%s\n", colorGray, colorReset)
 	fmt.Printf("  %s├── Score breakdown%s\n", colorGray, colorReset)
 	for i, line := range r.ScoreBreakdown {
@@ -206,17 +215,15 @@ func PrintReport(r *ValidationReport) {
 			prefix = "│   └──"
 		}
 		color := colorGreen
-		if strings.HasPrefix(line, "+0") || strings.HasPrefix(line, "-") {
+		if strings.HasPrefix(line, "+0") {
 			color = colorYellow
-			if strings.HasPrefix(line, "-") {
-				color = colorRed
-			}
+		} else if strings.HasPrefix(line, "-") {
+			color = colorRed
 		}
 		fmt.Printf("  %s%s %s%s%s\n", colorGray, prefix, color, line, colorReset)
 	}
 	fmt.Printf("  %s│%s\n", colorGray, colorReset)
 
-	// Verdict
 	verdictColor := colorRed
 	switch {
 	case r.VerdictScore >= 80:
